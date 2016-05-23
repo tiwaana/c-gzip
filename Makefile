@@ -1,8 +1,11 @@
 CC=gcc
-OBJ = at_gzip.o 
+CFLAGS = -Werror -Wall
+
+
+OBJ = at_gzip.o
 
 %.o: %.c
-	$(CC) -c -o $@ $< $(CFLAGS)
+	$(CC) -g -c -o $@ $< $(CFLAGS)
 
 at_gzip: $(OBJ)
 	gcc -o $@ $^ $(CFLAGS)

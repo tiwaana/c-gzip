@@ -14,7 +14,7 @@
 #define ECOMPRESSION	(0x3)
 #define ENOTPRESENT	(0x10)
 #define EINVALID	(0x100)
- 
+
 enum gzip_compression_method {
 	e_cm0_reserved = 0,
 	e_cm1_reserved,
@@ -45,9 +45,9 @@ struct gzip_header_fixed {
 	unsigned char gzip_mtime[4];
 	unsigned char gzip_xfl;
 	unsigned char gzip_os;
-}; 
+};
 
-#define MAX_READ_BUF 4
+#define MAX_READ_BUF 16
 
 /**
  * gzip_find_string_len() - find string length
@@ -71,9 +71,8 @@ ssize_t gzip_find_string_len(int gzip_fd)
 		fprintf(stdout, "out of memory\n");
 		return -ENOMEM;
 	}
-	
+
 	while ((eof == 0) && (complete == 0)) {
-		char *pos;
 		ssize_t bytes_read = 0;
 
 		errno = 0;
@@ -82,8 +81,7 @@ ssize_t gzip_find_string_len(int gzip_fd)
 			perror("read ");
 			break;
 		}
-	
-		pos = buf;
+
 		if (bytes_read == 0) {
 			eof = 1;
 		}
@@ -96,12 +94,12 @@ ssize_t gzip_find_string_len(int gzip_fd)
 				break;
 			}
 		}
-	}; 
-	
+	};
+
 	free(buf);
 	if (eof == 1) {
 		str_len = -EINVALID;
-	}  
+	}
 	return str_len;
 }
 
@@ -112,42 +110,58 @@ ssize_t gzip_find_string_len(int gzip_fd)
  *
  * allocate a buffer and copy the the data from the file
  * of given size and print it. This function assumes that
- * file position is set correctly to read the string. 
+ * file position is set correctly to read the string.
  *
- * return:	0 on success and -1 on failure
+ * return:	0 on success and errno (negative) on failure
  */
 int gzip_read_and_print_str(int gzip_stream_fd, ssize_t str_len)
 {
 	char *str = malloc(str_len+1);
-	
+	ssize_t bytes_read = 0;
+	ssize_t bytes_remaining = str_len +1;
+
 	if (str == NULL) {
 		return -ENOMEM;
 	}
 
-	read(gzip_stream_fd, str, str_len+1);
-	fprintf(stdout, "String : \"%s\" \n", str);
+	do {
+		errno = 0;
+		bytes_read = read(gzip_stream_fd, str, str_len+1);
+		if ((bytes_read < 0) && (errno != EINTR)) {
+			perror("read ");
+			break;
+		}
+		if (bytes_read > 0) {
+			bytes_remaining -= bytes_read;
+		}
+	}
+	while (bytes_remaining);
 
+	if (bytes_remaining == 0) {
+		str[str_len] = '\0';
+		fprintf(stdout, "String: \"%s\" \n", str);
+	}
 	free(str);
 
-	return 0;
+	return -bytes_read;
 }
 
 /**
  * check_gzip_header() - check gzip header for consistency
  * @arg1:	pointer to gzip fixed header struct
  *
- * This function checks if GZIP header is in compliance with 
+ * This function checks if GZIP header is in compliance with
  * RFC 1952 - GZIP file format specification version 4.3
- * 
- * return:	0 on success and error if header is not in 
+ *
+ * return:	0 on success and error if header is not in
  *		compliance with RFC. check error codes for
  *		specific reason.
  */
 int check_gzip_header(struct gzip_header_fixed *pgzfh)
 {
 	int status = 0;
-	
-	if ((pgzfh->gzip_id1 != GZIP_ID1) 
+
+	if ((pgzfh->gzip_id1 != GZIP_ID1)
 		|| (pgzfh->gzip_id2 != GZIP_ID2)) {
 			status = -EINVALIDID;
 	}
@@ -158,7 +172,7 @@ int check_gzip_header(struct gzip_header_fixed *pgzfh)
 	} else if (pgzfh->gzip_cm != 8) {
 		status = -ECOMPRESSION;
 	}
-	
+
 	return status;
 }
 
@@ -178,7 +192,7 @@ int gzip_get_filename(struct gzip_header_fixed *pgzfh, int gzip_stream_fd)
 	int status = 0;
 	ssize_t filename_len = 0;
 	off_t old_offset = 0;
-	
+
 	if ((pgzfh->gzip_flg & GZIP_FLAG_FNAME )) {
 		old_offset = lseek(gzip_stream_fd, 0, SEEK_CUR);
 		filename_len = gzip_find_string_len(gzip_stream_fd);
@@ -194,7 +208,7 @@ int gzip_get_filename(struct gzip_header_fixed *pgzfh, int gzip_stream_fd)
 	}
 	return status;
 }
-	 
+
 /** gzip_get_comment() - get comment of the gzipped file
  * @arg1:	handle of gzip fixed header struct
  * @arg2:	pointer to file stream, or file handle
@@ -211,7 +225,7 @@ int gzip_get_comment(struct gzip_header_fixed *pgzfh, int gzip_stream_fd)
 	int status = 0;
 	ssize_t comment_len = 0;
 	off_t old_offset = 0;
-	
+
 	if ((pgzfh->gzip_flg & GZIP_FLAG_FCOMMENT )) {
 		old_offset = lseek(gzip_stream_fd, 0, SEEK_CUR);
 		comment_len = gzip_find_string_len(gzip_stream_fd);
@@ -262,14 +276,14 @@ int main(int argc, char ** argv)
 	}
 
 
-#ifdef DEBUG		
+#ifdef DEBUG
 	fprintf(stdout, "printing flags \n"
 			" FTEXT: %s FEXTRA: %s FNAME: %s FCOMMENT %s \n",
-			(gzh.gzip_flg & GZIP_FLAG_FTEXT ? "on" : "off"), 
+			(gzh.gzip_flg & GZIP_FLAG_FTEXT ? "on" : "off"),
 			(gzh.gzip_flg & GZIP_FLAG_FEXTRA ? "on" : "off"),
 			(gzh.gzip_flg & GZIP_FLAG_FNAME ? "on" : "off"),
 			(gzh.gzip_flg & GZIP_FLAG_FCOMMENT ? "on" : "off"));
-#endif	
+#endif
 	if (gzh.gzip_flg & GZIP_FLAG_FEXTRA) {
 		bytes_read = read(gzip_fd, (void*)&gzip_xinfo_len, 2);
 		if (bytes_read) {
@@ -290,7 +304,7 @@ int main(int argc, char ** argv)
 		}
 	}
 
-	/* 
+	/*
 	 * BIG assumption here, we read upto the file name and according to gzip doc,
 	 * comment, if present, should follow filename. so  I am not seeking .
 	 */
@@ -303,7 +317,7 @@ int main(int argc, char ** argv)
 			fprintf(stdout, "Cannot read comments\n");
 		}
 	}
-	
+
 	close(gzip_fd);
 	return EXIT_SUCCESS;
 }
