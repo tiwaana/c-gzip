@@ -1,7 +1,7 @@
 CC=gcc
 OBJ = at_gzip.o 
 
-%.o: %.c $(DEPS)
+%.o: %.c
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 at_gzip: $(OBJ)
