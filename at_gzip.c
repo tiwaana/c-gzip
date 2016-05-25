@@ -62,7 +62,6 @@ struct gzip_header_fixed {
 ssize_t gzip_find_string_len(int gzip_fd)
 {
 	char *buf = NULL;
-	int complete = 0;
 	int eof = 0;
 	ssize_t str_len = 0;
 
@@ -72,7 +71,7 @@ ssize_t gzip_find_string_len(int gzip_fd)
 		return -ENOMEM;
 	}
 
-	while ((eof == 0) && (complete == 0)) {
+	while (eof == 0) {
 		ssize_t bytes_read = 0;
 
 		errno = 0;
@@ -90,7 +89,6 @@ ssize_t gzip_find_string_len(int gzip_fd)
 			len = strnlen(buf, bytes_read);
 			str_len += len;
 			if (len != bytes_read) {
-				complete = 1;
 				break;
 			}
 		}
@@ -112,9 +110,10 @@ ssize_t gzip_find_string_len(int gzip_fd)
  * of given size and print it. This function assumes that
  * file position is set correctly to read the string.
  *
- * return:	0 on success and errno (negative) on failure
+ * return:	0 on success and number of bytes remaining
+ *		on failure.
  */
-int gzip_read_and_print_str(int gzip_stream_fd, ssize_t str_len)
+ssize_t gzip_read_and_print_str(int gzip_stream_fd, ssize_t str_len)
 {
 	char *str = malloc(str_len+1);
 	ssize_t bytes_read = 0;
@@ -143,7 +142,7 @@ int gzip_read_and_print_str(int gzip_stream_fd, ssize_t str_len)
 	}
 	free(str);
 
-	return -bytes_read;
+	return bytes_remaining;
 }
 
 /**
@@ -169,7 +168,7 @@ int check_gzip_header(struct gzip_header_fixed *pgzfh)
 	        || (pgzfh->gzip_flg & GZIP_FLAG_RESERVED_6)
 	        || (pgzfh->gzip_flg & GZIP_FLAG_RESERVED_7)) {
 		status = -ERESERVED;
-	} else if (pgzfh->gzip_cm != 8) {
+	} else if (pgzfh->gzip_cm != e_cm8_deflate) {
 		status = -ECOMPRESSION;
 	}
 
@@ -246,9 +245,9 @@ int main(int argc, char ** argv)
 {
 	int gzip_fd = -1;
 	struct gzip_header_fixed gzh;
-	short gzip_xinfo_len;
+	short gzip_xinfo_len = 0;
 	int bytes_read = 0;
-	int status = 0;
+	int status = -1;
 
 	if (argc != 2) {
 		fprintf(stdout, "Usage: %s filename\n", argv[0]);
@@ -265,16 +264,15 @@ int main(int argc, char ** argv)
 	bytes_read = read(gzip_fd, (void*)&gzh, sizeof(gzh));
 	if (bytes_read != sizeof(gzh)) {
 		perror("read failed: ");
-		return EXIT_FAILURE;
+		goto error_out;
 	}
 
 	status = check_gzip_header(&gzh);
 
 	if (status != 0) {
 		fprintf(stdout, "gzip header is not valid err: %d\n", status);
-		return EXIT_FAILURE;
+		goto error_out;
 	}
-
 
 #ifdef DEBUG
 	fprintf(stdout, "printing flags \n"
@@ -286,12 +284,15 @@ int main(int argc, char ** argv)
 #endif
 	if (gzh.gzip_flg & GZIP_FLAG_FEXTRA) {
 		bytes_read = read(gzip_fd, (void*)&gzip_xinfo_len, 2);
-		if (bytes_read) {
-			lseek(gzip_fd, (sizeof(gzh) + gzip_xinfo_len), SEEK_SET);
+		if (bytes_read < 0) {
+			perror("read ");
+			goto error_out;
 		}
 	}
-	else {
-		lseek(gzip_fd, sizeof(gzh), SEEK_SET);
+
+	if (lseek(gzip_fd, sizeof(gzh), SEEK_SET) < 0) {
+		perror("lseek ");
+		goto error_out;
 	}
 
 	status = gzip_get_filename(&gzh, gzip_fd);
@@ -318,6 +319,7 @@ int main(int argc, char ** argv)
 		}
 	}
 
+error_out:
 	close(gzip_fd);
-	return EXIT_SUCCESS;
+	return status;
 }
