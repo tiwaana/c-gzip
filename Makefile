@@ -7,7 +7,7 @@ OBJ = gzip_header_parser.o
 %.o: %.c
 	$(CC) -g -c -o $@ $< $(CFLAGS)
 
-at_gzip: $(OBJ)
+gzip_header_parser: $(OBJ)
 	gcc -o $@ $^ $(CFLAGS)
 
 clean:
