@@ -290,7 +290,7 @@ int main(int argc, char ** argv)
 		}
 	}
 
-	if (lseek(gzip_fd, sizeof(gzh), SEEK_SET) < 0) {
+	if (lseek(gzip_fd, (sizeof(gzh) + gzip_xinfo_len), SEEK_SET) < 0) {
 		perror("lseek ");
 		goto error_out;
 	}
